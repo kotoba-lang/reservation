@@ -1,0 +1,16 @@
+{:paths ["src"]
+ ;; `kotoba.reservation` itself is ZERO-dep and pure — the html/css deps are
+ ;; used only by the `ui` namespace, exactly as in kotoba-lang/logistics and
+ ;; kotoba-lang/retail. A consumer that only needs the inventory/rate engine
+ ;; (an actor's governor, say) never loads them.
+ :deps {io.github.kotoba-lang/html {:local/root "../html"}
+        io.github.kotoba-lang/css  {:local/root "../css"}}
+ :aliases
+ {:test {:extra-paths ["test"]
+         :extra-deps {io.github.cognitect-labs/test-runner
+                      {:git/tag "v0.5.1" :git/sha "dfb30dd"}}
+         :main-opts ["-m" "cognitect.test-runner"]
+         :exec-fn cognitect.test-runner.api/test}
+  :lint {:replace-deps {clj-kondo/clj-kondo {:mvn/version "2024.11.14"}}
+         :main-opts ["-m" "clj-kondo.main" "--lint" "src" "test"
+                     "--fail-level" "error"]}}}
