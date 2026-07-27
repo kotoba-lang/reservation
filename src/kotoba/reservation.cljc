@@ -378,8 +378,18 @@
     :quote/currency c :quote/qty n}` — all integers in minor units.
   Given the same plan and request, this returns the same total on every
   runtime, forever; that is what makes `quote-matches-claim?` a real
-  check rather than a restatement of the claim."
+  check rather than a restatement of the claim.
+
+  Returns nil rather than throwing when it cannot price the request: no
+  rate plan, a plan with no numeric base amount, or a non-numeric `qty`.
+  A caller handed junk gets an un-priceable quote, not a
+  ClassCastException out of its own governor -- this library is called
+  BY the checks that are supposed to catch bad input, so it must not be
+  the thing that crashes on it. `quote-total` reads nil as 0 for
+  display, and `quote-matches-claim?` never matches a nil quote."
   [plan {:keys [dates qty fees]}]
+  (when (and (map? plan) (number? (:rate/base-amount plan))
+             (or (nil? qty) (number? qty)))
   (let [qty (or qty 1)
         unit-lines (for [d dates
                          :let [[date weekday] (normalize-date d)
@@ -402,7 +412,7 @@
      :quote/subtotal subtotal
      :quote/tax      tax
      :quote/total    (+ subtotal tax)
-     :quote/currency (:rate/currency plan)}))
+     :quote/currency (:rate/currency plan)})))
 
 (defn quote-total
   "The total of a quote map, in minor units."
@@ -424,7 +434,12 @@
   own filed fields — not a judgment about whether the fare is a good
   one, and not an authority to file a fare."
   [plan req claimed-total]
-  (= (quote-total (quote-for plan req)) claimed-total))
+  ;; An UN-PRICEABLE request must not match a claim of zero. `quote-total`
+  ;; reads a nil quote as 0 for display purposes, so comparing through it
+  ;; would let a junk request pass by claiming nothing was owed.
+  (let [q (quote-for plan req)]
+    (boolean (and q (number? claimed-total)
+                  (= (quote-total q) claimed-total)))))
 
 (defn availability-supports?
   "Can every `[bucket qty]` pair in `requests` be satisfied without
