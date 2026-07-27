@@ -255,3 +255,62 @@
         (str k " should have a real label, not a de-kebabbed keyword")))
   (testing "an unknown keyword still degrades to something readable"
     (is (= "some new error" (res/describe-error :some-new-error)))))
+
+;; ---------------------------------------------------------------------------
+;; Calendar — opt-in, proleptic Gregorian
+;; ---------------------------------------------------------------------------
+
+(deftest weekday-of-matches-known-dates
+  (testing "1970-01-01 was a Thursday (=4)"
+    (is (= 4 (res/weekday-of "1970-01-01"))))
+  (testing "dates whose weekday is independently checkable"
+    (is (= 0 (res/weekday-of "2026-08-02")) "Sunday")
+    (is (= 6 (res/weekday-of "2026-08-01")) "Saturday")
+    (is (= 3 (res/weekday-of "2000-03-01")) "Wednesday")
+    (is (= 1 (res/weekday-of "2026-07-27")) "Monday"))
+  (testing "pre-epoch dates work — the era arithmetic is signed"
+    (is (= 1 (res/weekday-of "1900-01-01")) "Monday")
+    (is (= 6 (res/weekday-of "2000-01-01")) "Saturday"))
+  (testing "the Gregorian cycle is exactly 400 years = 146097 days = 20871 weeks,
+            so any date has the same weekday 400 years earlier or later"
+    (is (zero? (mod 146097 7)))
+    (doseq [d ["2000-01-01" "2026-08-01" "1970-01-01"]]
+      (let [[y m dd] (res/parse-date d)]
+        (is (= (res/weekday-of d)
+               (res/weekday-of (res/format-date [(- y 400) m dd])))
+            (str d " vs 400 years earlier")))))
+  (is (nil? (res/weekday-of "not-a-date")))
+  (is (nil? (res/weekday-of nil))))
+
+(deftest civil-round-trips-through-day-numbers
+  (doseq [d ["1970-01-01" "1969-12-31" "2000-02-29" "2026-08-01"
+             "2400-02-29" "1900-03-01" "1600-01-01"]]
+    (is (= d (res/format-date (res/civil-from-days (res/days-from-civil (res/parse-date d)))))
+        d))
+  (testing "1900 was NOT a leap year but 2000 was — the century rule"
+    (is (= 1 (- (res/days-from-civil (res/parse-date "1900-03-01"))
+                (res/days-from-civil (res/parse-date "1900-02-28")))))
+    (is (= 2 (- (res/days-from-civil (res/parse-date "2000-03-01"))
+                (res/days-from-civil (res/parse-date "2000-02-28")))))))
+
+(deftest nights-between-is-half-open
+  (testing "a 2026-08-01 -> 2026-08-05 stay is FOUR nights, not five"
+    (let [ns (res/nights-between "2026-08-01" "2026-08-05")]
+      (is (= 4 (count ns)))
+      (is (= ["2026-08-01" "2026-08-02" "2026-08-03" "2026-08-04"] (mapv :date ns)))
+      (is (= [6 0 1 2] (mapv :weekday ns)) "Sat Sun Mon Tue")))
+  (testing "a same-day or reversed range is zero nights, not a negative or a crash"
+    (is (= [] (res/nights-between "2026-08-05" "2026-08-05")))
+    (is (= [] (res/nights-between "2026-08-05" "2026-08-01"))))
+  (testing "an unparseable date yields nil — un-priceable, never free"
+    (is (nil? (res/nights-between "garbage" "2026-08-05")))
+    (is (nil? (res/nights-between "2026-08-01" nil))))
+  (testing "it spans month and year boundaries"
+    (is (= 2 (count (res/nights-between "2026-12-31" "2027-01-02"))))
+    (is (= ["2026-12-31" "2027-01-01"] (mapv :date (res/nights-between "2026-12-31" "2027-01-02"))))))
+
+(deftest nights-between-feeds-quote-for-directly
+  (let [nights (res/nights-between "2026-08-01" "2026-08-03")
+        q (res/quote-for plan {:dates nights :qty 1})]
+    ;; 2026-08-01 is a Saturday (+20%), 08-02 a Sunday (no rule)
+    (is (= [50400 42000] (mapv :line/amount (filterv #(= :unit (:line/kind %)) (:quote/lines q)))))))

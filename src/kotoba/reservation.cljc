@@ -30,15 +30,112 @@
   resulting `:rate/base-amount` — this library will not silently pick a
   rounding convention on their behalf.
 
-  ## No clock, no calendar
+  ## No clock; calendar only when you ask for it
 
-  `expired?` takes `now` as an argument and `quote-for` takes each
-  date's weekday as data. This library never reads a clock and never
-  derives a weekday from a date string. Both would make a quote
-  unreproducible — a governor recomputing a proposal minutes later
-  would get a different answer and the recompute check would be
-  worthless. Callers supply time; this namespace supplies arithmetic."
+  `expired?` takes `now` as an argument, and nothing in this namespace
+  ever reads a clock. That one matters for reproducibility: a governor
+  recomputing a proposal minutes later must get the same answer, so
+  wall-clock time is always an argument, never an ambient read.
+
+  `quote-for` likewise takes each date's weekday as data rather than
+  deriving it. The reason is NOT reproducibility — deriving the weekday
+  of \"2026-08-01\" is deterministic and would give the same answer
+  forever. (An earlier version of this docstring claimed otherwise; it
+  was wrong, and the wrong rationale is corrected here rather than left
+  for the next reader to copy.) The actual reasons are that the core
+  pricing path should not bake in one calendar system, and that callers
+  may key modifiers on something other than a proleptic-Gregorian
+  weekday — a fiscal week, a local holiday table, a season.
+
+  For callers who DO want proleptic-Gregorian arithmetic, `weekday-of`
+  and `nights-between` provide it explicitly, as opt-in pure functions.
+  They are how an accommodation caller turns a stay's own check-in and
+  check-out into the nights to price, so that a governor recomputes the
+  total from the booking's own dates rather than from a night list the
+  advisor supplied and could have shortened."
   (:require [clojure.string :as str]))
+
+;; ---------------------------------------------------------------------------
+;; Calendar — opt-in, proleptic Gregorian, pure integer arithmetic
+;; ---------------------------------------------------------------------------
+;; Nothing above or below calls into this section. It exists so a caller
+;; that wants Gregorian day arithmetic can ask for it explicitly instead
+;; of pulling in a date library or hand-rolling the algorithm again.
+
+(defn parse-date
+  "Parse an ISO `YYYY-MM-DD` date into `[y m d]` integers, or nil when the
+  string is not that shape. Does not validate that the date exists —
+  `2026-02-31` parses; `days-from-civil` will simply place it where the
+  arithmetic puts it."
+  [s]
+  (when (string? s)
+    (when-let [[_ y m d] (re-matches #"(\d{4})-(\d{2})-(\d{2})" s)]
+      [(parse-long y) (parse-long m) (parse-long d)])))
+
+(defn days-from-civil
+  "Days since 1970-01-01 for a proleptic-Gregorian `[y m d]`. Howard
+  Hinnant's civil-from-days inverse: exact integer arithmetic, no
+  floating point, no locale, no clock."
+  [[y m d]]
+  (let [y (if (<= m 2) (dec y) y)
+        era (quot (if (>= y 0) y (- y 399)) 400)
+        yoe (- y (* era 400))                                  ; [0, 399]
+        doy (+ (quot (+ (* 153 (+ m (if (> m 2) -3 9))) 2) 5) (dec d))
+        doe (+ (* yoe 365) (quot yoe 4) (- (quot yoe 100)) doy)]
+    (+ (* era 146097) doe -719468)))
+
+(defn weekday-of
+  "Proleptic-Gregorian weekday for an ISO date string: 0=Sunday .. 6=Saturday,
+  matching the keys `rate-plan`'s `:weekday-bp` uses. nil for an
+  unparseable date.
+
+  Opt-in on purpose — see the ns docstring. `quote-for` will never call
+  this for you."
+  [s]
+  (when-let [ymd (parse-date s)]
+    (mod (+ 4 (days-from-civil ymd)) 7)))                      ; 1970-01-01 was a Thursday
+
+(defn civil-from-days
+  "Inverse of `days-from-civil`: days since 1970-01-01 -> `[y m d]`."
+  [z]
+  (let [z (+ z 719468)
+        era (quot (if (>= z 0) z (- z 146096)) 146097)
+        doe (- z (* era 146097))                               ; [0, 146096]
+        yoe (quot (+ (- doe (quot doe 1460)) (quot doe 36524) (- (quot doe 146096))) 365)
+        y (+ yoe (* era 400))
+        doy (- doe (+ (* 365 yoe) (quot yoe 4) (- (quot yoe 100))))
+        mp (quot (+ (* 5 doy) 2) 153)                          ; [0, 11]
+        d (+ (- doy (quot (+ (* 153 mp) 2) 5)) 1)              ; [1, 31]
+        m (+ mp (if (< mp 10) 3 -9))]                          ; [1, 12]
+    [(if (<= m 2) (inc y) y) m d]))
+
+(defn- pad2 [n] (if (< n 10) (str "0" n) (str n)))
+
+(defn format-date
+  "`[y m d]` -> ISO `YYYY-MM-DD`."
+  [[y m d]]
+  (str y "-" (pad2 m) "-" (pad2 d)))
+
+(defn nights-between
+  "The nights of a stay from `check-in` to `check-out`, as
+  `[{:date d :weekday w} ..]` ready to hand to `quote-for` as `:dates`.
+
+  Half-open, the way accommodation actually bills: a stay of
+  2026-08-01 -> 2026-08-05 is FOUR nights (the 1st, 2nd, 3rd and 4th),
+  not five. Returns [] when check-out is on or before check-in, and nil
+  when either date is unparseable — a caller that gets nil must treat
+  the stay as un-priceable rather than as a free one."
+  [check-in check-out]
+  (let [a (parse-date check-in), b (parse-date check-out)]
+    (when (and a b)
+      (let [from (days-from-civil a), to (days-from-civil b)]
+        (if (<= to from)
+          []
+          (mapv (fn [n]
+                  (let [ymd (civil-from-days n)]
+                    {:date (format-date ymd)
+                     :weekday (mod (+ 4 n) 7)}))
+                (range from to)))))))
 
 ;; ---------------------------------------------------------------------------
 ;; Money — integer minor units, integer basis points

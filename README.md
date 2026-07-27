@@ -41,10 +41,29 @@ rounding applies it in their own filing and passes the resulting
 `:rate/base-amount`; this library will not pick a rounding convention on
 their behalf.
 
-**No clock, no calendar.** `expired?` takes `now` as an argument.
-`quote-for` takes each date's weekday as data. Deriving either internally
-would make a quote unreproducible — a governor recomputing minutes later
-would get a different answer and the check would be worthless.
+**No clock; calendar only when you ask for it.** `expired?` takes `now`
+as an argument, and nothing here ever reads a clock — that one is about
+reproducibility, since a governor recomputing minutes later must get the
+same answer.
+
+`quote-for` takes each date's weekday as data rather than deriving it,
+but *not* for that reason: deriving the weekday of `2026-08-01` is
+deterministic and would give the same answer forever. The real reasons
+are that the core pricing path should not bake in one calendar system,
+and that callers may key modifiers on a fiscal week, a local holiday
+table or a season instead. Callers who *do* want proleptic-Gregorian
+arithmetic get it explicitly, from `weekday-of` and `nights-between`:
+
+```clojure
+(res/nights-between "2026-08-01" "2026-08-05")
+;=> [{:date "2026-08-01" :weekday 6} {:date "2026-08-02" :weekday 0}
+;    {:date "2026-08-03" :weekday 1} {:date "2026-08-04" :weekday 2}]
+;   half-open — a 1st-to-5th stay is FOUR nights, the way accommodation bills
+```
+
+That matters for a governor: it recomputes a stay's total from the
+booking's **own check-in and check-out**, not from a night list the
+advisor supplied and could have shortened.
 
 **Authorized overbooking is a separate field from capacity.** `available`
 may legitimately sell into an operator's declared allowance, but `oversold?`
