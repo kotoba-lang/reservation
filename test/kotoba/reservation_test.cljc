@@ -314,3 +314,15 @@
         q (res/quote-for plan {:dates nights :qty 1})]
     ;; 2026-08-01 is a Saturday (+20%), 08-02 a Sunday (no rule)
     (is (= [50400 42000] (mapv :line/amount (filterv #(= :unit (:line/kind %)) (:quote/lines q)))))))
+
+(deftest quote-for-is-total-and-never-throws-at-its-caller
+  (testing "this library is called BY the checks that catch bad input, so it
+            must not be the thing that crashes on it"
+    (is (nil? (res/quote-for plan {:dates ["d"] :qty "2"})) "non-numeric qty")
+    (is (nil? (res/quote-for nil {:dates ["d"] :qty 1})) "no plan")
+    (is (nil? (res/quote-for {:rate/base-amount "x"} {:dates ["d"] :qty 1})) "junk plan")
+    (is (some? (res/quote-for plan {:dates ["d"]})) "an absent qty still defaults to 1"))
+  (testing "and the downstream readers cope with the nil"
+    (is (zero? (res/quote-total (res/quote-for plan {:dates ["d"] :qty "2"}))))
+    (is (not (res/quote-matches-claim? plan {:dates ["d"] :qty "2"} 0))
+        "an un-priceable request never matches, not even a claim of zero")))
