@@ -9,7 +9,12 @@
  ;; `Local lib io.github.kotoba-lang/html not found` at classpath build
  ;; time, before a single namespace loads. cloud-itonami-isic-7990
  ;; consumes this repo by :git/sha and hit exactly that.
- :deps {}
+ :deps {
+        ;; kotoba.lang.text, not clojure.string. Pinned as an explicit floor:
+        ;; tools.deps takes the NEWEST sha it is shown, so without a floor here
+        ;; this repo silently rides whatever a sibling happens to name.
+        io.github.kotoba-lang/text {:git/sha "73bdb13ae7a3d004b44bca08be03a3191157a38f"}
+       }
  :aliases
  {;; the ui namespace and its tests
   :ui {:extra-deps {io.github.kotoba-lang/html {:local/root "../html"}

@@ -53,7 +53,7 @@
   check-out into the nights to price, so that a governor recomputes the
   total from the booking's own dates rather than from a night list the
   advisor supplied and could have shortened."
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 ;; ---------------------------------------------------------------------------
 ;; Calendar — opt-in, proleptic Gregorian, pure integer arithmetic
