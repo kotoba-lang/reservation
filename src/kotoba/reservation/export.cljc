@@ -4,7 +4,7 @@
   Renders inventory, holds and quote lines to CSV and JSON for
   settlement audit and downstream reporting. Pure data → text: no
   network."
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [kotoba.reservation :as res]))
 
 (defn- csv-cell [v]
