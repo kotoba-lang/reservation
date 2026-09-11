@@ -124,8 +124,8 @@ checkable — the integrations and the licence belong to whoever deploys it.
 ## Test
 
 ```bash
-clojure -M:lint
-clojure -M:test
+kbb -M:lint
+kbb -M:test
 ```
 
 ## License
