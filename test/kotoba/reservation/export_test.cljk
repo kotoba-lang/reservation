@@ -1,5 +1,5 @@
 (ns kotoba.reservation.export-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [kotoba.lang.text :as str]
             [kotoba.reservation :as res]
             [kotoba.reservation.export :as ex]))
