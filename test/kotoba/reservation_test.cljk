@@ -1,5 +1,5 @@
 (ns kotoba.reservation-test
-  (:require [clojure.test :refer [deftest is testing]]
+  (:require [kotoba.test :refer [deftest is testing]]
             [kotoba.reservation :as res]))
 
 (def ^:private jpn-econ
